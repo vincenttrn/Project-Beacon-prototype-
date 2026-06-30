@@ -126,6 +126,25 @@ export async function editDiscordMessage(channelId, messageId, enquiry, extraFoo
   return response.json()
 }
 
+export async function editOriginalInteraction(applicationId, token, content) {
+  const response = await fetch(
+    `https://discord.com/api/v10/webhooks/${applicationId}/${token}/messages/@original`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        content,
+        flags: 64,
+      }),
+    }
+  )
+
+  if (!response.ok) {
+    const text = await response.text()
+    throw new Error(`Discord edit original failed: ${text}`)
+  }
+}
+
 export async function followUpInteraction(applicationId, token, content) {
   const response = await fetch(
     `https://discord.com/api/v10/webhooks/${applicationId}/${token}`,

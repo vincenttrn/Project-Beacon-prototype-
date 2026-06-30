@@ -1,7 +1,8 @@
+import { waitUntil } from '@vercel/functions'
 import {
   verifyDiscordRequest,
   editDiscordMessage,
-  followUpInteraction,
+  editOriginalInteraction,
 } from '../_lib/discord.js'
 import { getEnquiry, updateEnquiry } from '../_lib/store.js'
 import { sendReplyToEnquirer } from '../_lib/email.js'
@@ -23,6 +24,53 @@ async function readRawBody(req) {
 function jsonResponse(res, status, data) {
   res.status(status).setHeader('Content-Type', 'application/json')
   res.end(JSON.stringify(data))
+}
+
+async function processReply(interaction, enquiryId, replyMessage) {
+  try {
+    const enquiry = await getEnquiry(enquiryId)
+
+    if (!enquiry) {
+      await editOriginalInteraction(
+        interaction.application_id,
+        interaction.token,
+        'Enquiry not found.'
+      )
+      return
+    }
+
+    await sendReplyToEnquirer(enquiry, replyMessage)
+
+    const updated = await updateEnquiry(enquiryId, {
+      status: 'replied',
+      repliedAt: new Date().toISOString(),
+      lastReply: replyMessage,
+    })
+
+    await editDiscordMessage(
+      interaction.channel_id,
+      interaction.message.id,
+      updated,
+      `Replied to ${enquiry.email}`
+    )
+
+    await editOriginalInteraction(
+      interaction.application_id,
+      interaction.token,
+      `Reply sent to ${enquiry.email}.`
+    )
+  } catch (err) {
+    console.error('Discord reply failed:', err)
+    try {
+      await editOriginalInteraction(
+        interaction.application_id,
+        interaction.token,
+        `Failed to send reply: ${err.message}`
+      )
+    } catch (followUpErr) {
+      console.error('Discord follow-up failed:', followUpErr)
+    }
+  }
 }
 
 export default async function handler(req, res) {
@@ -85,7 +133,10 @@ export default async function handler(req, res) {
         })
       }
 
-      const updated = await updateEnquiry(enquiryId, { status: 'handled', handledAt: new Date().toISOString() })
+      const updated = await updateEnquiry(enquiryId, {
+        status: 'handled',
+        handledAt: new Date().toISOString(),
+      })
 
       await editDiscordMessage(
         interaction.channel_id,
@@ -108,49 +159,11 @@ export default async function handler(req, res) {
       const enquiryId = customId.replace('reply_modal:', '')
       const replyMessage = interaction.data.components[0].components[0].value
 
-      jsonResponse(res, 200, { type: 5, data: { flags: 64 } })
+      // Acknowledge immediately so Discord stops "thinking"
+      jsonResponse(res, 200, { type: 5 })
 
-      try {
-        const enquiry = await getEnquiry(enquiryId)
-
-        if (!enquiry) {
-          await followUpInteraction(
-            interaction.application_id,
-            interaction.token,
-            'Enquiry not found.'
-          )
-          return
-        }
-
-        await sendReplyToEnquirer(enquiry, replyMessage)
-
-        const updated = await updateEnquiry(enquiryId, {
-          status: 'replied',
-          repliedAt: new Date().toISOString(),
-          lastReply: replyMessage,
-        })
-
-        await editDiscordMessage(
-          interaction.channel_id,
-          interaction.message.id,
-          updated,
-          `Replied to ${enquiry.email}`
-        )
-
-        await followUpInteraction(
-          interaction.application_id,
-          interaction.token,
-          `Reply sent to ${enquiry.email}.`
-        )
-      } catch (err) {
-        console.error('Discord reply failed:', err)
-        await followUpInteraction(
-          interaction.application_id,
-          interaction.token,
-          'Failed to send reply. Check server logs.'
-        )
-      }
-
+      // Keep the function alive until email + Discord updates finish
+      waitUntil(processReply(interaction, enquiryId, replyMessage))
       return
     }
   }
