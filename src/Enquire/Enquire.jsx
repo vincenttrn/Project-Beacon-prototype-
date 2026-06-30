@@ -15,11 +15,13 @@ function Enquire() {
 
   const [status, setStatus] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [errorMessage, setErrorMessage] = useState('')
 
   const sendEmail = async (e) => {
     e.preventDefault()
     setLoading(true)
     setStatus(null)
+    setErrorMessage('')
 
     const formData = new FormData(formRef.current)
     const payload = Object.fromEntries(formData.entries())
@@ -31,14 +33,17 @@ function Enquire() {
         body: JSON.stringify(payload),
       })
 
+      const data = await response.json().catch(() => ({}))
+
       if (!response.ok) {
-        throw new Error('Request failed')
+        throw new Error(data.error || `Request failed (${response.status})`)
       }
 
       setStatus('success')
       formRef.current.reset()
-    } catch {
+    } catch (err) {
       setStatus('error')
+      setErrorMessage(err.message || 'Something went wrong. Please try again.')
     } finally {
       setLoading(false)
     }
@@ -82,7 +87,7 @@ function Enquire() {
                 <ErrorRoundedIcon />
                 <div>
                   <strong>Something went wrong.</strong>
-                  <p>Please try again or email us directly.</p>
+                  <p>{errorMessage || 'Please try again or email us directly.'}</p>
                 </div>
               </div>
             )}

@@ -2,12 +2,23 @@ import { Redis } from '@upstash/redis'
 
 let redis = null
 
+function getRedisConfig() {
+  const url = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL
+  const token = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN
+
+  if (!url || !token) {
+    throw new Error(
+      'Redis is not configured. In Vercel go to Storage → Create Database → Upstash Redis/KV → link to this project.'
+    )
+  }
+
+  return { url, token }
+}
+
 function getRedis() {
   if (!redis) {
-    redis = new Redis({
-      url: process.env.KV_REST_API_URL,
-      token: process.env.KV_REST_API_TOKEN,
-    })
+    const { url, token } = getRedisConfig()
+    redis = new Redis({ url, token })
   }
   return redis
 }
